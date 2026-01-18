@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Py Crawl
+Comment=Crawl and analyze folder structures
+Exec="/home/anthony/Documents/My git projects/Crawler/run_crawler.sh"
+Icon=/home/anthony/Documents/My git projects/Crawler/crawler_icon.svg
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+StartupNotify=true
