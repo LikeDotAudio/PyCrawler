@@ -168,7 +168,8 @@ class VisualExplorerTab(ttk.Frame):
                 lines = f.readlines()
             
             self._parse_map_lines(lines)
-            self._calculate_layout_sugiyama()
+            # self._calculate_layout_sugiyama()
+            self._calculate_layout_universe()
             self.draw()
             self.status_label.config(text=f"Loaded {len(self.nodes)} nodes")
         except Exception as e:
@@ -306,6 +307,153 @@ class VisualExplorerTab(ttk.Frame):
                     for target_path in self.file_nodes:
                         if os.path.basename(target_path) == imp or os.path.basename(target_path).replace(".py", "") == imp:
                             self.edges.append((node_id, target_path, 'dependency'))
+
+    # --- Universe Layout Algorithm ---
+
+    def _calculate_layout_universe(self):
+        """
+        Layout that treats folders as 'Universes' (containers).
+        Files are stacked inside. Sub-folders are zones treeing off.
+        """
+        if not self.nodes: return
+        
+        # 1. Build Tree Structure
+        tree, root_id = self._build_hierarchy_tree()
+        if not root_id: return
+        
+        # 2. Measure Sizes (Bottom-Up)
+        self._measure_universe(root_id, tree)
+        
+        # 3. Position Nodes (Top-Down)
+        self._position_universe(root_id, tree, 0, 0)
+        
+    def _build_hierarchy_tree(self):
+        tree = {nid: {'files': [], 'dirs': []} for nid in self.nodes}
+        root_id = None
+        
+        # Find Root (first node with no parent in hierarchy edges, or just depth 0)
+        # Actually, _parse_map_lines usually puts root first.
+        # Let's rely on hierarchy edges.
+        child_ids = set()
+        for u, v, etype in self.edges:
+            if etype == 'hierarchy':
+                child_ids.add(v)
+                # Determine type of v
+                if self.nodes[v]['type'] == 'file':
+                    tree[u]['files'].append(v)
+                else:
+                    tree[u]['dirs'].append(v)
+        
+        # Root is the one not in child_ids
+        for nid in self.nodes:
+            if nid not in child_ids:
+                root_id = nid
+                break
+        
+        return tree, root_id
+
+    def _measure_universe(self, node_id, tree):
+        node = self.nodes[node_id]
+        padding = 20
+        header_height = 40
+        
+        if node['type'] == 'file':
+            # Files have fixed or content-based size
+            # Currently using fixed for consistency, or calculation from Sugiyama
+            # Let's use a standard file size
+            node['w'] = 220
+            # Height depends on content (functions/classes)
+            content_count = len(node['contents'])
+            node['h'] = 60 + (content_count * 18)
+            return
+            
+        # It's a directory
+        children_files = tree[node_id]['files']
+        children_dirs = tree[node_id]['dirs']
+        
+        # Measure Children
+        max_file_w = 0
+        total_files_h = 0
+        
+        for fid in children_files:
+            self._measure_universe(fid, tree)
+            if self.nodes[fid]['w'] > max_file_w: max_file_w = self.nodes[fid]['w']
+            total_files_h += self.nodes[fid]['h'] + padding
+            
+        # Measure Subdirs
+        total_subdirs_w = 0
+        max_subdir_h = 0
+        
+        for did in children_dirs:
+            self._measure_universe(did, tree)
+            total_subdirs_w += self.nodes[did]['w'] + padding
+            if self.nodes[did]['h'] > max_subdir_h: max_subdir_h = self.nodes[did]['h']
+            
+        # Calculate Universe Dimensions
+        # Layout: Files in a column on Left. Subdirs in a row on Right (or below if no files).
+        
+        # Width
+        content_w = 0
+        if children_files and children_dirs:
+            content_w = max_file_w + padding + total_subdirs_w
+        elif children_files:
+            content_w = max_file_w
+        elif children_dirs:
+            content_w = total_subdirs_w
+        else:
+            content_w = 200 # Empty folder
+            
+        node['w'] = content_w + (padding * 2)
+        
+        # Height
+        # Files column height
+        col_h = total_files_h
+        # Subdirs row height
+        row_h = max_subdir_h
+        
+        content_h = max(col_h, row_h)
+        if content_h == 0: content_h = 100
+        
+        node['h'] = header_height + content_h + (padding * 2)
+
+    def _position_universe(self, node_id, tree, x, y):
+        node = self.nodes[node_id]
+        padding = 20
+        header_height = 40
+        
+        node['x'] = x
+        node['y'] = y
+        
+        if node['type'] == 'file':
+            return
+            
+        # Position Children
+        start_x = x + padding
+        start_y = y + header_height + padding
+        
+        children_files = tree[node_id]['files']
+        children_dirs = tree[node_id]['dirs']
+        
+        # 1. Stack Files
+        current_y = start_y
+        max_file_w = 0
+        for fid in children_files:
+            fnode = self.nodes[fid]
+            self._position_universe(fid, tree, start_x, current_y)
+            current_y += fnode['h'] + padding
+            if fnode['w'] > max_file_w: max_file_w = fnode['w']
+            
+        # 2. Tree off Subdirs (to the right of files)
+        subdir_start_x = start_x
+        if children_files:
+            subdir_start_x += max_file_w + padding
+            
+        # For subdirs, we arrange them in a row for now
+        current_x = subdir_start_x
+        for did in children_dirs:
+            dnode = self.nodes[did]
+            self._position_universe(did, tree, current_x, start_y)
+            current_x += dnode['w'] + padding
 
     # --- Sugiyama & PageRank Algorithms ---
 
@@ -516,16 +664,16 @@ class VisualExplorerTab(ttk.Frame):
             h = node['h'] * self.scale
             
             # Shadow
-            self.canvas.create_rectangle(x+5, y+5, x+w+5, y+h+5, fill="#111", outline="", tags=("node", nid))
+            self.canvas.create_rectangle(x+5, y+5, x+w+5, y+h+5, fill="#111", outline="", tags=("node", nid, "node_shadow"))
             
             # Main Box
             if node['type'] == 'dir':
                 # Directory Style (Flatter, Header-like)
-                rect = self.canvas.create_rectangle(x, y, x+w, y+h, fill="#222", outline=node['color'], width=3, tags=("node", nid))
-                self.canvas.create_text(x+w/2, y+h/2, text=node['name'].upper(), fill=node['color'], font=("Arial", int(16*self.scale), "bold"), tags=("node", nid))
+                rect = self.canvas.create_rectangle(x, y, x+w, y+h, fill="#222", outline=node['color'], width=3, tags=("node", nid, "node_box", f"box_{nid}"))
+                self.canvas.create_text(x+w/2, y+h/2, text=node['name'].upper(), fill=node['color'], font=("Arial", int(16*self.scale), "bold"), tags=("node", nid, "node_text", f"text_{nid}"))
             else:
                 # File Style
-                rect = self.canvas.create_rectangle(x, y, x+w, y+h, fill="#2d2d2d", outline=node['color'], width=2, tags=("node", nid))
+                rect = self.canvas.create_rectangle(x, y, x+w, y+h, fill="#2d2d2d", outline=node['color'], width=2, tags=("node", nid, "node_box", f"box_{nid}"))
                 
                 title = node['name']
                 font_size = int(14 * self.scale) 
@@ -537,8 +685,8 @@ class VisualExplorerTab(ttk.Frame):
                     display_title = title[:mid] + "-\n" + title[mid:]
                     header_height = 55 * self.scale 
                 
-                self.canvas.create_text(x+10, y+(header_height/2), text=display_title, fill="white", font=("Arial", font_size, "bold"), anchor="w", tags=("node", nid))
-                self.canvas.create_line(x, y+header_height, x+w, y+header_height, fill=node['color'], tags=("node", nid))
+                self.canvas.create_text(x+10, y+(header_height/2), text=display_title, fill="white", font=("Arial", font_size, "bold"), anchor="w", tags=("node", nid, "node_text", f"text_{nid}"))
+                self.canvas.create_line(x, y+header_height, x+w, y+header_height, fill=node['color'], tags=("node", nid, "node_line", f"line_{nid}"))
                 
                 cy = y + header_height + (10 * self.scale)
                 limit = 6
@@ -554,13 +702,13 @@ class VisualExplorerTab(ttk.Frame):
                     icon = "ƒ" if itype == 'function' else "C" if itype == 'class' else "K"
                     color = "#4ec9b0" if itype == 'class' else "#dcdcaa" if itype == 'function' else "#9cdcfe"
                     
-                    self.canvas.create_text(x+15, cy, text=f"{icon} {iname}", fill=color, font=("Consolas", int(10*self.scale)), anchor="w", tags=("node", nid))
+                    self.canvas.create_text(x+15, cy, text=f"{icon} {iname}", fill=color, font=("Consolas", int(10*self.scale)), anchor="w", tags=("node", nid, "node_text", f"text_{nid}"))
                     cy += 18 * self.scale
                     if cy > y + h - 10: break
                     count += 1
                     
                 if len(node['contents']) > limit:
-                     self.canvas.create_text(x+15, cy, text=f"... (+{len(node['contents']) - limit})", fill="#888", font=("Consolas", int(10*self.scale), "italic"), anchor="w", tags=("node", nid))
+                     self.canvas.create_text(x+15, cy, text=f"... (+{len(node['contents']) - limit})", fill="#888", font=("Consolas", int(10*self.scale), "italic"), anchor="w", tags=("node", nid, "node_text", f"text_{nid}"))
 
     # --- Interaction ---
     
@@ -672,17 +820,127 @@ class VisualExplorerTab(ttk.Frame):
         self.draw()
 
     def highlight_node(self, node_id):
-        self.canvas.itemconfig("node", fill="#222", outline="#444")
+        # Dim all
+        self.canvas.itemconfig("node_box", fill="#222", outline="#444")
+        self.canvas.itemconfig("node_text", fill="#666")
+        self.canvas.itemconfig("node_line", fill="#444")
         self.canvas.itemconfig("edge", fill="#333", width=1)
-        self.canvas.itemconfig(node_id, fill="#383838", outline="#fff", width=3)
         
+        # Highlight Selected
+        self.canvas.itemconfig(f"box_{node_id}", fill="#383838", outline="#fff", width=3)
+        self.canvas.itemconfig(f"text_{node_id}", fill="#fff")
+        self.canvas.itemconfig(f"line_{node_id}", fill="#fff")
+        
+        # Highlight Neighbors
         for u, v, _ in self.edges:
             if u == node_id:
                 self.canvas.itemconfig(f"edge_{u}_{v}", fill="#ff5555", width=2, dash=())
-                self.canvas.itemconfig(v, outline="#ff5555", width=2)
+                self.canvas.itemconfig(f"box_{v}", outline="#ff5555", width=2)
+                self.canvas.itemconfig(f"text_{v}", fill="#ffaaaa")
             elif v == node_id:
                 self.canvas.itemconfig(f"edge_{u}_{v}", fill="#55ff55", width=2, dash=())
-                self.canvas.itemconfig(u, outline="#55ff55", width=2)
+                self.canvas.itemconfig(f"box_{u}", outline="#55ff55", width=2)
+                self.canvas.itemconfig(f"text_{u}", fill="#aaffaa")
 
     def reset_highlight(self):
         self.draw()
+
+    def save_layout(self):
+        if not self.nodes:
+            messagebox.showinfo("Info", "No layout to save.")
+            return
+            
+        file_path = filedialog.asksaveasfilename(
+            title="Save Layout",
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json")]
+        )
+        
+        if file_path:
+            layout_data = {}
+            for nid, node in self.nodes.items():
+                layout_data[nid] = {'x': node['x'], 'y': node['y']}
+            
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(layout_data, f, indent=4)
+                self.status_label.config(text=f"Layout saved to {os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save layout: {e}")
+
+    def load_layout(self):
+        file_path = filedialog.askopenfilename(
+            title="Load Layout",
+            filetypes=[("JSON Files", "*.json")]
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    layout_data = json.load(f)
+                
+                match_count = 0
+                for nid, pos in layout_data.items():
+                    if nid in self.nodes:
+                        self.nodes[nid]['x'] = pos['x']
+                        self.nodes[nid]['y'] = pos['y']
+                        match_count += 1
+                
+                self.draw()
+                self.status_label.config(text=f"Layout loaded ({match_count} nodes updated)")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load layout: {e}")
+
+    def show_context_menu(self, event):
+        item = self.canvas.find_closest(event.x, event.y)
+        tags = self.canvas.gettags(item)
+        node_id = None
+        for t in tags:
+            if t in self.nodes:
+                node_id = t
+                break
+        
+        if node_id:
+            self.current_context_node = node_id
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def view_node_code(self):
+        if not hasattr(self, 'current_context_node') or not self.current_context_node:
+            return
+            
+        node = self.nodes[self.current_context_node]
+        if node['type'] != 'file':
+            messagebox.showinfo("Info", "Can only view code for files.")
+            return
+            
+        file_path = node['id'] # id is full path
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                _, ext = os.path.splitext(file_path)
+                SyntaxViewer(self, os.path.basename(file_path), content, ext)
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not read file: {e}")
+        else:
+             messagebox.showerror("Error", "File not found on disk.")
+
+    def open_node_in_editor(self):
+        if not hasattr(self, 'current_context_node') or not self.current_context_node:
+            return
+
+        file_path = self.nodes[self.current_context_node]['id']
+        if not os.path.exists(file_path):
+             messagebox.showerror("Error", "File not found on disk.")
+             return
+             
+        try:
+            if platform.system() == 'Darwin':       # macOS
+                subprocess.call(('open', file_path))
+            elif platform.system() == 'Windows':    # Windows
+                os.startfile(file_path)
+            else:                                   # linux variants
+                subprocess.call(('xdg-open', file_path))
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open editor: {e}")

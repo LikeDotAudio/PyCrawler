@@ -127,8 +127,11 @@ class FolderCrawlerApp:
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(bottom_frame, text=" 📂 OPEN OUTPUT FOLDER ", command=self._open_output_folder).pack(side="right", padx=5)
-        ttk.Button(bottom_frame, text=" 📦 FIND ZIP AND OPEN GOOGLE DRIVE ", command=self._open_zip_and_drive).pack(side="right", padx=5)
+        self.btn_open_folder = ttk.Button(bottom_frame, text=" 📂 OPEN OUTPUT FOLDER ", command=self._open_output_folder, state="disabled")
+        self.btn_open_folder.pack(side="right", padx=5)
+        
+        self.btn_zip_drive = ttk.Button(bottom_frame, text=" 📦 FIND ZIP AND OPEN GOOGLE DRIVE ", command=self._open_zip_and_drive, state="disabled")
+        self.btn_zip_drive.pack(side="right", padx=5)
 
         # 4. Console Log
         self.console_frame = ttk.LabelFrame(self.root, text="System Output")
@@ -242,6 +245,10 @@ class FolderCrawlerApp:
         self.root.after(0, lambda: self.tab_view.load_files(self.output_dir))
         self.root.after(0, lambda: self.notebook.select(self.tab_view))
         
+        # Enable Buttons
+        self.root.after(0, lambda: self.btn_open_folder.config(state="normal"))
+        self.root.after(0, lambda: self.btn_zip_drive.config(state="normal"))
+        
         # Also prepare Regenerate Tab just in case
         everything_log = os.path.join(self.output_dir, "EVERYTHING.py.LOG")
         if os.path.exists(everything_log):
@@ -289,7 +296,7 @@ class FolderCrawlerApp:
             self._log("ℹ️ No active output directory found.", "header")
 
     def _open_zip_and_drive(self):
-        # Open the configured URL
+        # 1. Open Google Drive URL
         url = self.config_manager.get_drive_url()
         if url:
             try:
@@ -299,8 +306,32 @@ class FolderCrawlerApp:
             except Exception as e:
                 self._log(f"❌ Error opening URL: {e}", "header")
         
-        # Also try to open the output folder if it exists
+        # 2. Find and Highlight Zip (if exists)
         if self.output_dir and os.path.exists(self.output_dir):
-            self._open_file(self.output_dir)
+            found_zip = None
+            for f in os.listdir(self.output_dir):
+                if f.lower().endswith('.zip'):
+                    found_zip = os.path.join(self.output_dir, f)
+                    break
+            
+            if found_zip:
+                self._log(f"📦 Found Zip: {os.path.basename(found_zip)}", "header")
+                # Try to highlight the file
+                try:
+                    if os.name == 'nt':
+                        subprocess.run(['explorer', '/select,', found_zip])
+                    elif os.uname().sysname == 'Darwin':
+                        subprocess.run(['open', '-R', found_zip])
+                    else:
+                        # Linux: standard file managers might not support 'select' easily via xdg-open
+                        # We just open the folder as usual, but maybe we can try nautilus/dolphin specific if we knew them.
+                        # For now, just open the dir.
+                        self._open_file(self.output_dir)
+                except Exception as e:
+                    self._log(f"❌ Error highlighting zip: {e}", "header")
+                    self._open_file(self.output_dir)
+            else:
+                self._log("ℹ️ No Zip file found in output.", "header")
+                self._open_file(self.output_dir)
         else:
             self._log("ℹ️ No active output directory found.", "header")
