@@ -20,7 +20,7 @@ from .tabs.select_folder_tab import SelectFolderTab
 from .tabs.file_types_tab import FileTypesTab
 from .tabs.regenerate_tab import RegenerateTab
 from .tabs.view_logs_tab import ViewLogsTab
-from .tabs.visual_explorer_tab import VisualExplorerTab
+from .tabs.visual_explorer import VisualExplorerTab
 
 class FolderCrawlerApp:
     def __init__(self, root, start_directory):
