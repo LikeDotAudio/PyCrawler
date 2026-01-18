@@ -20,6 +20,7 @@ from .tabs.select_folder_tab import SelectFolderTab
 from .tabs.file_types_tab import FileTypesTab
 from .tabs.regenerate_tab import RegenerateTab
 from .tabs.view_logs_tab import ViewLogsTab
+from .tabs.visual_explorer_tab import VisualExplorerTab
 
 class FolderCrawlerApp:
     def __init__(self, root, start_directory):
@@ -113,18 +114,21 @@ class FolderCrawlerApp:
         self.tab_select = SelectFolderTab(self.notebook, self._on_folder_selected)
         self.tab_files = FileTypesTab(self.notebook, self._start_crawl)
         self.tab_view = ViewLogsTab(self.notebook)
+        self.tab_visual = VisualExplorerTab(self.notebook, self)
         self.tab_regen = RegenerateTab(self.notebook, self._start_regeneration)
 
         self.notebook.add(self.tab_select, text=" 📁 1. SELECT FOLDER ")
         self.notebook.add(self.tab_files, text=" ⚙️ 2. FILE TYPES ")
         self.notebook.add(self.tab_view, text=" 📑 3. VIEW LOGS ")
-        self.notebook.add(self.tab_regen, text=" 🛠️ 4. REGENERATE ")
+        self.notebook.add(self.tab_visual, text=" 🗺️ 4. VISUAL EXPLORER ")
+        self.notebook.add(self.tab_regen, text=" 🛠️ 5. REGENERATE ")
 
         # 3. Bottom Area for Global Actions
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", padx=10, pady=5)
 
         ttk.Button(bottom_frame, text=" 📂 OPEN OUTPUT FOLDER ", command=self._open_output_folder).pack(side="right", padx=5)
+        ttk.Button(bottom_frame, text=" 📦 FIND ZIP AND OPEN GOOGLE DRIVE ", command=self._open_zip_and_drive).pack(side="right", padx=5)
 
         # 4. Console Log
         self.console_frame = ttk.LabelFrame(self.root, text="System Output")
@@ -243,17 +247,6 @@ class FolderCrawlerApp:
         if os.path.exists(everything_log):
              self.root.after(0, lambda: self.tab_regen.load_log_file(everything_log))
 
-        messagebox.showinfo("Crawl Complete", "The crawl has finished successfully.")
-        
-        # Open the configured URL
-        url = self.config_manager.get_drive_url()
-        if url:
-             try:
-                 import webbrowser
-                 webbrowser.open(url)
-             except Exception as e:
-                 self._log(f"❌ Error opening URL: {e}", "header")
-
     def _start_regeneration(self, log_path):
         destination_dir = filedialog.askdirectory(title="Select Destination for Regeneration")
         if not destination_dir: return
@@ -290,6 +283,23 @@ class FolderCrawlerApp:
             self._log(f"❌ Error opening file: {e}", "header")
 
     def _open_output_folder(self):
+        if self.output_dir and os.path.exists(self.output_dir):
+            self._open_file(self.output_dir)
+        else:
+            self._log("ℹ️ No active output directory found.", "header")
+
+    def _open_zip_and_drive(self):
+        # Open the configured URL
+        url = self.config_manager.get_drive_url()
+        if url:
+            try:
+                import webbrowser
+                webbrowser.open(url)
+                self._log(f"Opening URL: {url}", "import")
+            except Exception as e:
+                self._log(f"❌ Error opening URL: {e}", "header")
+        
+        # Also try to open the output folder if it exists
         if self.output_dir and os.path.exists(self.output_dir):
             self._open_file(self.output_dir)
         else:

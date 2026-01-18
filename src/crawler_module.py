@@ -111,6 +111,10 @@ class Crawler:
                             py_lines = self.file_processor.analyze_python_file(file_path, current_indent_level + 1)
                             for line in py_lines:
                                 map_output_lines.append(line + "\n")
+                        elif item.lower().endswith(".json"):
+                            json_lines = self.file_processor.analyze_json_file(file_path, current_indent_level + 1)
+                            for line in json_lines:
+                                map_output_lines.append(line + "\n")
                         
                         # Write to EVERYTHING log
                         try:

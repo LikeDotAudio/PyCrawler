@@ -3,6 +3,7 @@
 import ast
 import os
 import inspect
+import json
 from .utils_module import debug_log, current_version
 
 class FileProcessor:
@@ -10,6 +11,46 @@ class FileProcessor:
         self.log_callback = log_callback
         self.file_log_callback = file_log_callback # Callback to write to the physical log file
         self.current_file = os.path.basename(__file__)
+
+    def analyze_json_file(self, file_path, indent_level):
+        """
+        Parses a JSON file and extracts top-level keys.
+        Returns a list of formatted strings for MAP.txt.
+        """
+        analysis_lines = []
+        indent_str = "    " * indent_level
+        inner_item_indent_prefix = indent_str + "    |   "
+        
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            if isinstance(data, dict):
+                keys = list(data.keys())
+                # specific request: break it out into a tree with at least 2 of it's key values
+                # We will list up to 10 keys to be safe and useful
+                shown_keys = keys[:10]
+                
+                if keys:
+                     if self.log_callback:
+                        self.log_callback(f"    [JSON] Keys in {os.path.basename(file_path)}: {', '.join(shown_keys)}", "file")
+
+                     for key in shown_keys:
+                         val_type = type(data[key]).__name__
+                         analysis_lines.append(f"#{inner_item_indent_prefix}-> Key: {key} ({val_type})")
+                     
+                     if len(keys) > 10:
+                         analysis_lines.append(f"#{inner_item_indent_prefix}-> ... ({len(keys) - 10} more keys)")
+            else:
+                 # It might be a list
+                 analysis_lines.append(f"#{inner_item_indent_prefix}-> [Root is a List with {len(data)} items]")
+
+        except json.JSONDecodeError as e:
+            analysis_lines.append(f"#{indent_str}    - JSON Decode Error: {e}")
+        except Exception as e:
+            analysis_lines.append(f"#{indent_str}    - Error analyzing JSON: {e}")
+            
+        return analysis_lines
 
     def analyze_python_file(self, file_path, indent_level):
         """

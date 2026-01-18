@@ -69,7 +69,7 @@ class ConfigManager:
         """
         Logs a process action with a timestamp.
         """
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         # We use the timestamp as the key to ensure uniqueness and order
         log_entry = f"{action}: {details}"
         self.config['ProcessLog'][timestamp] = log_entry
