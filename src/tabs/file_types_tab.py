@@ -17,14 +17,16 @@ class FileTypesTab(ttk.Frame):
         self.column_exts = {} # Map column name to list of extensions
         
         self.categories = {
-            "Code": {'.py', '.java', '.cs', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', 
+            "Code": {'.py', '.java', '.cs', '.sln', '.csproject', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', 
                      '.rb', '.go', '.rs', '.php', '.swift', '.kt', '.kts', 
                      '.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.vue',
                      '.sh', '.bat', '.ps1'},
             "Data": {'.json', '.xml', '.yaml', '.yml', '.csv', '.ini', '.toml', '.env',
                      '.sql', '.db', '.sqlite', '.sqlite3', '.mdb', '.accdb', '.dat'},
             "Text": {'.md', '.txt', '.rst', '.log', '.pdf', '.rtf'},
-            "Images": {'.png', '.jpg', '.jpeg', '.svg', '.gif', '.ico', '.webp'}
+            "Images": {'.png', '.jpg', '.jpeg', '.svg', '.gif', '.ico', '.webp'},
+            "Temp": {'.pyc', '.tmp'},
+            "Archive": {'.zip'}
         }
         
         self._setup_ui()
@@ -119,7 +121,7 @@ class FileTypesTab(ttk.Frame):
         # Load saved selection
         saved_exts = self.config_manager.get_selected_extensions()
         
-        default_checked = self.categories["Code"].union(self.categories["Data"]).union(self.categories["Text"])
+        default_checked = self.categories["Code"].union(self.categories["Data"]).union(self.categories["Text"]).union(self.categories["Temp"]).union(self.categories["Archive"])
 
         # Categorize
         categorized_exts = {
@@ -127,6 +129,8 @@ class FileTypesTab(ttk.Frame):
             "Data": [],
             "Text": [],
             "Images": [],
+            "Temp": [],
+            "Archive": [],
             "Other": []
         }
 
@@ -144,21 +148,17 @@ class FileTypesTab(ttk.Frame):
         self.column_exts = categorized_exts
 
         # Setup Columns
-        columns = ["Code", "Data", "Text", "Images", "Other"]
+        columns = ["Code", "Data", "Text", "Images", "Temp", "Archive", "Other"]
         
         for i, col_name in enumerate(columns):
             # Column Header
             header = ttk.Label(self.scrollable_frame, text=col_name.upper(), font=("Segoe UI", 10, "bold"), foreground=COLOR_PRIMARY)
             header.grid(row=0, column=i, sticky="nw", padx=15, pady=(10, 5))
 
-            # Select All Column Button
-            btn = ttk.Button(self.scrollable_frame, text="SELECT", width=8, 
-                             command=lambda c=col_name: self._select_column(c))
-            btn.grid(row=1, column=i, sticky="w", padx=15, pady=(0, 15))
-            
-            # Items
+            # Items first to determine button state
+            exts_in_col = sorted(categorized_exts[col_name])
             row_idx = 2
-            for ext in sorted(categorized_exts[col_name]):
+            for ext in exts_in_col:
                 if saved_exts:
                     is_checked = ext in saved_exts
                 else:
@@ -171,16 +171,45 @@ class FileTypesTab(ttk.Frame):
                 chk = ttk.Checkbutton(self.scrollable_frame, text=label_text, variable=var)
                 chk.grid(row=row_idx, column=i, sticky="w", padx=15, pady=2)
                 self.extension_vars[ext] = var
+                # Update button text if state changes manually (optional, but good for sync)
+                var.trace_add("write", lambda *args, c=col_name: self._sync_column_button(c))
                 row_idx += 1
+
+            # Select All Column Button
+            all_sel = all(self.extension_vars[ext].get() for ext in exts_in_col) if exts_in_col else False
+            btn_text = "DESELECT" if all_sel else "SELECT"
+            
+            btn = ttk.Button(self.scrollable_frame, text=btn_text, width=10)
+            btn.config(command=lambda b=btn, c=col_name: self._toggle_column(b, c))
+            btn.grid(row=1, column=i, sticky="w", padx=15, pady=(0, 15))
+            
+            if not hasattr(self, 'column_buttons'):
+                self.column_buttons = {}
+            self.column_buttons[col_name] = btn
 
         for i in range(len(columns)):
             self.scrollable_frame.grid_columnconfigure(i, weight=1, minsize=150)
 
-    def _select_column(self, col_name):
+    def _sync_column_button(self, col_name):
+        if not hasattr(self, 'column_buttons') or col_name not in self.column_buttons:
+            return
         exts = self.column_exts.get(col_name, [])
+        if not exts: return
+        all_selected = all(self.extension_vars[ext].get() for ext in exts if ext in self.extension_vars)
+        self.column_buttons[col_name].config(text="DESELECT" if all_selected else "SELECT")
+
+    def _toggle_column(self, btn, col_name):
+        exts = self.column_exts.get(col_name, [])
+        if not exts: return
+        
+        all_selected = all(self.extension_vars[ext].get() for ext in exts if ext in self.extension_vars)
+        target_state = not all_selected
+        
         for ext in exts:
             if ext in self.extension_vars:
-                self.extension_vars[ext].set(True)
+                self.extension_vars[ext].set(target_state)
+        
+        btn.config(text="DESELECT" if target_state else "SELECT")
 
     def _select_all(self):
         for var in self.extension_vars.values():

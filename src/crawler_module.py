@@ -81,6 +81,9 @@ class Crawler:
                         self.log_callback(f"  {indent_str}{prefix}{item}", "dir")
                     self.saver.write_log(f"  {indent_str}{prefix}{item}")
                 elif item in files:
+                    if item.lower() == "__init__.py":
+                        continue
+                    
                     file_path = os.path.join(root, item)
                     
                     # Filter by extension if provided
@@ -106,7 +109,7 @@ class Crawler:
                     # File Processing
                     # Check extension against allowed list or default list for processing
                     # Even if allowed, we might only want to process text-based ones for EVERYTHING log
-                    if item.lower().endswith(('.py', '.csv', '.ini', '.md', '.json', '.txt', '.xml', '.html', '.css', '.js', '.yml', '.yaml')) and not item.lower().endswith('.log') and item.lower() != "__init__.py":
+                    if item.lower().endswith(('.py', '.csv', '.ini', '.md', '.json', '.txt', '.xml', '.html', '.css', '.js', '.yml', '.yaml', '.cs', '.sln', '.csproject')) and not item.lower().endswith('.log') and item.lower() != "__init__.py":
                         if item.lower().endswith(".py"):
                             py_lines = self.file_processor.analyze_python_file(file_path, current_indent_level + 1)
                             for line in py_lines:

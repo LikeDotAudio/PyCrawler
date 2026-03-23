@@ -1,161 +1,133 @@
 class VisualExplorerLayoutUniverseMixin:
     def _calculate_layout_universe(self):
         """
-        Layout that treats folders as 'Universes' (containers).
-        Files are stacked inside. Sub-folders are zones treeing off.
+        Layout that treats folders, files, and classes as containers.
         """
         if not self.nodes:
-            print("Layout Universe: No nodes to layout.")
             return
         
-        # 1. Build Tree Structure
-        tree, roots = self._build_hierarchy_tree()
-        print(f"Layout Universe: Found {len(roots)} roots and {len(self.nodes)} total nodes.")
-        
-        if not roots:
-            print("Layout Universe: No roots found! Is the hierarchy parsing correct?")
-            # Fallback: Treat all as roots if hierarchy failed completely
-            roots = list(self.nodes.keys())
+        # 1. Build Roots (nodes with no parent in self.nodes)
+        roots = []
+        for nid, node in self.nodes.items():
+            parent_id = node.get('parent')
+            if not parent_id or parent_id not in self.nodes:
+                roots.append(nid)
 
         # 2. Measure Sizes (Bottom-Up)
         for root_id in roots:
-            self._measure_universe(root_id, tree)
+            self._measure_node(root_id)
         
-        # 3. Position Nodes (Top-Down) - Arrange roots horizontally
-        current_x = 0
-        current_y = 0
+        # 3. Position Nodes (Top-Down)
+        current_x = 50
+        current_y = 50
         padding = 50
         
         for root_id in roots:
-            self._position_universe(root_id, tree, current_x, current_y)
-            # Move next root to the right
-            width = self.nodes[root_id]['w']
-            if width <= 0: width = 250 # Fallback width
-            current_x += width + padding
+            self._position_node(root_id, current_x, current_y)
+            current_x += self.nodes[root_id]['w'] + padding
             
-        print(f"Layout Universe: Completed. Total width {current_x}.")
-        
-    def _build_hierarchy_tree(self):
-        tree = {nid: {'files': [], 'dirs': []} for nid in self.nodes}
-        roots = []
-        
-        # Find Root (nodes with no parent in hierarchy edges)
-        child_ids = set()
-        for u, v, etype in self.edges:
-            if etype == 'hierarchy':
-                child_ids.add(v)
-                # Determine type of v
-                if self.nodes[v]['type'] == 'file':
-                    tree[u]['files'].append(v)
-                else:
-                    tree[u]['dirs'].append(v)
-        
-        # Roots are those not in child_ids
-        for nid in self.nodes:
-            if nid not in child_ids:
-                roots.append(nid)
-        
-        return tree, roots
-
-    def _measure_universe(self, node_id, tree):
+    def _measure_node(self, node_id):
         node = self.nodes[node_id]
         padding = 20
         header_height = 40
         
-        if node['type'] == 'file':
-            # Files have fixed or content-based size
-            # Currently using fixed for consistency, or calculation from Sugiyama
-            # Let's use a standard file size
-            node['w'] = 220
-            # Height depends on content (functions/classes)
-            content_count = len(node['contents'])
-            node['h'] = 60 + (content_count * 18)
+        if node['type'] == 'function':
+            node['w'] = 140
+            node['h'] = 35
             return
-            
-        # It's a directory
-        children_files = tree[node_id]['files']
-        children_dirs = tree[node_id]['dirs']
-        
-        # Measure Children
-        max_file_w = 0
-        total_files_h = 0
-        
-        for fid in children_files:
-            self._measure_universe(fid, tree)
-            if self.nodes[fid]['w'] > max_file_w: max_file_w = self.nodes[fid]['w']
-            total_files_h += self.nodes[fid]['h'] + padding
-            
-        # Measure Subdirs
-        total_subdirs_w = 0
-        max_subdir_h = 0
-        
-        for did in children_dirs:
-            self._measure_universe(did, tree)
-            total_subdirs_w += self.nodes[did]['w'] + padding
-            if self.nodes[did]['h'] > max_subdir_h: max_subdir_h = self.nodes[did]['h']
-            
-        # Calculate Universe Dimensions
-        # Layout: Files in a column on Left. Subdirs in a row on Right (or below if no files).
-        
-        # Width
-        content_w = 0
-        if children_files and children_dirs:
-            content_w = max_file_w + padding + total_subdirs_w
-        elif children_files:
-            content_w = max_file_w
-        elif children_dirs:
-            content_w = total_subdirs_w
-        else:
-            content_w = 200 # Empty folder
-            
-        node['w'] = content_w + (padding * 2)
-        
-        # Height
-        # Files column height
-        col_h = total_files_h
-        # Subdirs row height
-        row_h = max_subdir_h
-        
-        content_h = max(col_h, row_h)
-        if content_h == 0: content_h = 100
-        
-        node['h'] = header_height + content_h + (padding * 2)
 
-    def _position_universe(self, node_id, tree, x, y):
+        children = node.get('children', [])
+        if not children:
+            node['w'] = 180
+            node['h'] = 60
+            return
+
+        # Recursive Measure
+        for cid in children:
+            self._measure_node(cid)
+            
+        # Sort children to minimize crossing (simple heuristic)
+        # Sort by dependency count or name
+        children.sort(key=lambda x: self.nodes[x]['name'])
+            
+        # Layout strategy depends on type
+        if node['type'] == 'dir':
+            # Folders: Arrange all children (files and subdirs) in a horizontal row
+            total_w = 0
+            max_h = 0
+            
+            for cid in children:
+                cnode = self.nodes[cid]
+                total_w += cnode['w'] + padding
+                if cnode['h'] > max_h: max_h = cnode['h']
+            
+            node['w'] = max(200, total_w + padding)
+            node['h'] = header_height + max_h + (padding * 2)
+            
+        elif node['type'] == 'file' or node['type'] == 'class':
+            # Stack children vertically
+            max_w = 0
+            total_h = 0
+            for cid in children:
+                cnode = self.nodes[cid]
+                if cnode['w'] > max_w: max_w = cnode['w']
+                total_h += cnode['h'] + 10 # Tighter padding for internal items
+                
+            node['w'] = max_w + (padding * 2)
+            node['h'] = header_height + total_h + padding
+
+    def _position_node(self, node_id, x, y):
         node = self.nodes[node_id]
-        padding = 20
-        header_height = 40
-        
         node['x'] = x
         node['y'] = y
         
-        if node['type'] == 'file':
+        padding = 20
+        header_height = 40
+        
+        children = node.get('children', [])
+        if not children:
             return
             
-        # Position Children
-        start_x = x + padding
-        start_y = y + header_height + padding
+        if node['type'] == 'dir':
+            if getattr(self, 'layout_reverse', False):
+                # Reverse: Children are to the LEFT of the folder container's logical start
+                # This is tricky because the container's box already measured its width including children.
+                # Let's arrange children from right-to-left.
+                curr_x = x + node['w'] - padding
+                curr_y = y + header_height + padding
+                for cid in reversed(children):
+                    cnode = self.nodes[cid]
+                    curr_x -= cnode['w']
+                    self._position_node(cid, curr_x, curr_y)
+                    curr_x -= padding
+            else:
+                curr_x = x + padding
+                curr_y = y + header_height + padding
+                for cid in children:
+                    self._position_node(cid, curr_x, curr_y)
+                    curr_x += self.nodes[cid]['w'] + padding
+                
+        elif node['type'] == 'file' or node['type'] == 'class':
+            # Vertical stacking remains vertical, but we could offset it if we wanted.
+            curr_y = y + header_height + 10
+            for cid in children:
+                self._position_node(cid, x + padding, curr_y)
+                curr_y += self.nodes[cid]['h'] + 10
+
+    def _build_hierarchy_tree(self):
+        # This might be used by treeview population
+        tree = {nid: {'files': [], 'dirs': [], 'classes': [], 'functions': []} for nid in self.nodes}
+        roots = []
         
-        children_files = tree[node_id]['files']
-        children_dirs = tree[node_id]['dirs']
+        for nid, node in self.nodes.items():
+            parent_id = node.get('parent')
+            if not parent_id or parent_id not in self.nodes:
+                roots.append(nid)
+            else:
+                ntype = node['type']
+                if ntype == 'file': tree[parent_id]['files'].append(nid)
+                elif ntype == 'dir': tree[parent_id]['dirs'].append(nid)
+                elif ntype == 'class': tree[parent_id]['classes'].append(nid)
+                elif ntype == 'function': tree[parent_id]['functions'].append(nid)
         
-        # 1. Stack Files
-        current_y = start_y
-        max_file_w = 0
-        for fid in children_files:
-            fnode = self.nodes[fid]
-            self._position_universe(fid, tree, start_x, current_y)
-            current_y += fnode['h'] + padding
-            if fnode['w'] > max_file_w: max_file_w = fnode['w']
-            
-        # 2. Tree off Subdirs (to the right of files)
-        subdir_start_x = start_x
-        if children_files:
-            subdir_start_x += max_file_w + padding
-            
-        # For subdirs, we arrange them in a row for now
-        current_x = subdir_start_x
-        for did in children_dirs:
-            dnode = self.nodes[did]
-            self._position_universe(did, tree, current_x, start_y)
-            current_x += dnode['w'] + padding
+        return tree, roots

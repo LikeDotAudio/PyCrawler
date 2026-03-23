@@ -7,8 +7,16 @@ class VisualExplorerUIMixin:
         ctrl_frame = ttk.Frame(self)
         ctrl_frame.pack(fill="x", side="top", padx=5, pady=5)
         
+        ttk.Button(ctrl_frame, text="Analyze Codebase", command=self.analyze_codebase).pack(side="left", padx=5)
+        ttk.Button(ctrl_frame, text="Examine Database", command=self.examine_database).pack(side="left", padx=5)
+        ttk.Button(ctrl_frame, text="Reverse Layout", command=self.toggle_reverse_layout).pack(side="left", padx=5)
         ttk.Button(ctrl_frame, text="Load Map", command=self.reload_map).pack(side="left", padx=5)
         ttk.Button(ctrl_frame, text="Reset View", command=self.reset_view).pack(side="left", padx=5)
+        
+        ttk.Separator(ctrl_frame, orient="vertical").pack(side="left", padx=10, fill="y")
+        ttk.Button(ctrl_frame, text="Zoom In", command=lambda: self.on_zoom_btn(1.2)).pack(side="left", padx=2)
+        ttk.Button(ctrl_frame, text="Zoom Out", command=lambda: self.on_zoom_btn(0.8)).pack(side="left", padx=2)
+        ttk.Button(ctrl_frame, text="Fit View", command=self.fit_to_view).pack(side="left", padx=2)
         
         # New Export/Import Buttons
         ttk.Separator(ctrl_frame, orient="vertical").pack(side="left", padx=10, fill="y")
@@ -18,8 +26,28 @@ class VisualExplorerUIMixin:
         self.status_label = ttk.Label(ctrl_frame, text="Ready", foreground="gray")
         self.status_label.pack(side="right", padx=5)
 
-        # Canvas
-        self.canvas = Canvas(self, bg="#1e1e1e", highlightthickness=0)
+        # Main Area with Sidebar
+        self.paned = ttk.PanedWindow(self, orient="horizontal")
+        self.paned.pack(fill="both", expand=True)
+
+        # Sidebar (Treeview)
+        sidebar = ttk.Frame(self.paned)
+        self.paned.add(sidebar, weight=1)
+
+        self.tree = ttk.Treeview(sidebar, show="tree", selectmode="browse")
+        self.tree.pack(fill="both", expand=True, side="left")
+        
+        tree_scroll = ttk.Scrollbar(sidebar, orient="vertical", command=self.tree.yview)
+        tree_scroll.pack(fill="y", side="right")
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+        
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+
+        # Canvas Area
+        canvas_frame = ttk.Frame(self.paned)
+        self.paned.add(canvas_frame, weight=4)
+
+        self.canvas = Canvas(canvas_frame, bg="#1e1e1e", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         
         # Bindings

@@ -1,8 +1,77 @@
 import os
 import re
 from tkinter import filedialog, messagebox
+from .analyzer import CodeAnalyzer
 
 class VisualExplorerDataMixin:
+    def toggle_reverse_layout(self):
+        self.layout_reverse = not self.layout_reverse
+        self.status_label.config(text=f"Layout: {'Backward' if self.layout_reverse else 'Forward'}")
+        self._calculate_layout_universe()
+        self.draw()
+        self.fit_to_view()
+
+    def analyze_codebase(self):
+        target_dir = None
+        if hasattr(self.root_app, 'tab_select') and hasattr(self.root_app.tab_select, 'selected_path'):
+            target_dir = self.root_app.tab_select.selected_path
+            
+        if not target_dir or not os.path.exists(target_dir):
+            target_dir = filedialog.askdirectory(title="Select Project Root to Analyze")
+            
+        if target_dir:
+            self.status_label.config(text=f"Analyzing Codebase: {os.path.basename(target_dir)}...")
+            self.update_idletasks()
+            
+            # Get allowed extensions from tab_files
+            allowed_exts = ['.py']
+            if hasattr(self.root_app, 'tab_files'):
+                selected = [ext for ext, var in self.root_app.tab_files.extension_vars.items() if var.get()]
+                if selected:
+                    # Filter for code-like extensions if needed, but user said "as selected"
+                    allowed_exts = selected
+
+            print(f"VisualExplorer: Starting analysis of {target_dir}")
+            analyzer = CodeAnalyzer(target_dir, allowed_extensions=allowed_exts, mode="code")
+            self.nodes, self.edges = analyzer.analyze()
+            self.visible_nodes = set()
+            
+            print("VisualExplorer: Calculating layout...")
+            self._calculate_layout_universe()
+            print("VisualExplorer: Populating tree...")
+            self._populate_tree()
+            print("VisualExplorer: Drawing...")
+            self.draw()
+            self.status_label.config(text=f"Analyzed {len(self.nodes)} nodes")
+        else:
+            self.status_label.config(text="No Directory Selected")
+
+    def examine_database(self):
+        target_dir = None
+        if hasattr(self.root_app, 'tab_select') and hasattr(self.root_app.tab_select, 'selected_path'):
+            target_dir = self.root_app.tab_select.selected_path
+            
+        if not target_dir or not os.path.exists(target_dir):
+            target_dir = filedialog.askdirectory(title="Select Data Root to Examine")
+            
+        if target_dir:
+            self.status_label.config(text=f"Examining Database: {os.path.basename(target_dir)}...")
+            self.update_idletasks()
+            
+            # Use data extensions
+            allowed_exts = ['.json', '.csv', '.xml', '.yaml', '.yml']
+            
+            analyzer = CodeAnalyzer(target_dir, allowed_extensions=allowed_exts, mode="data")
+            self.nodes, self.edges = analyzer.analyze()
+            self.visible_nodes = set()
+            
+            self._calculate_layout_universe()
+            self._populate_tree()
+            self.draw()
+            self.status_label.config(text=f"Examined {len(self.nodes)} data nodes")
+        else:
+            self.status_label.config(text="No Directory Selected")
+
     def reload_map(self):
         map_path = None
         if hasattr(self.root_app, 'output_dir') and self.root_app.output_dir:
@@ -22,6 +91,7 @@ class VisualExplorerDataMixin:
         self.nodes = {}
         self.edges = []
         self.file_nodes = {}
+        self.visible_nodes = set()
         self.folder_colors = {} 
         self.status_label.config(text=f"Loading {os.path.basename(map_path)}...")
         self.update_idletasks()
@@ -35,11 +105,43 @@ class VisualExplorerDataMixin:
             self._parse_map_lines(lines)
             # self._calculate_layout_sugiyama()
             self._calculate_layout_universe()
+            self._populate_tree()
             self.draw()
             self.status_label.config(text=f"Loaded {len(self.nodes)} nodes")
         except Exception as e:
             self.status_label.config(text=f"Error loading map: {e}")
             print(f"Error: {e}")
+
+    def _populate_tree(self):
+        # Clear existing
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
+        roots = [nid for nid, node in self.nodes.items() if not node.get('parent') or node.get('parent') not in self.nodes]
+        
+        for root_id in roots:
+            self._add_tree_node("", root_id)
+
+    def _add_tree_node(self, parent, node_id):
+        if self.tree.exists(node_id):
+            return
+            
+        node = self.nodes[node_id]
+        
+        icons = {
+            'dir': "📁",
+            'file': "📄",
+            'class': "Ⓒ",
+            'function': "ƒ"
+        }
+        icon = icons.get(node['type'], "?")
+        display_name = f"{icon} {node['name']}"
+        
+        item = self.tree.insert(parent, "end", iid=node_id, text=display_name, open=False)
+        
+        # Add children
+        for cid in node.get('children', []):
+            self._add_tree_node(item, cid)
 
     def _get_folder_color(self, full_path):
         parts = full_path.split(os.sep)

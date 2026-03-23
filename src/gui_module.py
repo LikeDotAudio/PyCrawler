@@ -243,6 +243,7 @@ class FolderCrawlerApp:
         
         # Auto-load into View Logs Tab
         self.root.after(0, lambda: self.tab_view.load_files(self.output_dir))
+        self.root.after(0, lambda: self.tab_visual.analyze_codebase())
         self.root.after(0, lambda: self.notebook.select(self.tab_view))
         
         # Enable Buttons

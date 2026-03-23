@@ -30,6 +30,8 @@ class VisualExplorerTab(ttk.Frame,
         self.nodes = {} # id -> NodeData
         self.edges = [] # list of (from_id, to_id, type)
         self.file_nodes = {} # file_path -> node_id
+        self.visible_nodes = set() # Set of node IDs to draw
+        self.layout_reverse = False # Forward vs Backward layout
         
         self.offset_x = 0
         self.offset_y = 0
