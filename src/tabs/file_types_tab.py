@@ -17,16 +17,18 @@ class FileTypesTab(ttk.Frame):
         self.column_exts = {} # Map column name to list of extensions
         
         self.categories = {
-            "Code": {'.py', '.java', '.cs', '.sln', '.csproject', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', 
-                     '.rb', '.go', '.rs', '.php', '.swift', '.kt', '.kts', 
-                     '.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.vue',
-                     '.sh', '.bat', '.ps1'},
-            "Data": {'.json', '.xml', '.yaml', '.yml', '.csv', '.ini', '.toml', '.env',
-                     '.sql', '.db', '.sqlite', '.sqlite3', '.mdb', '.accdb', '.dat'},
-            "Text": {'.md', '.txt', '.rst', '.log', '.pdf', '.rtf'},
-            "Images": {'.png', '.jpg', '.jpeg', '.svg', '.gif', '.ico', '.webp'},
-            "Temp": {'.pyc', '.tmp'},
-            "Archive": {'.zip'}
+            "Compiler Caches": {'.o', '.pyc', '.d', '.rmeta'},
+            "Runtime & Index": {'.log', '.tag'},
+            "Backups": {'.old', '.tmp', '.bak'},
+            "Programming": {'.py', '.rs', '.rlib', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.ipp', '.js', '.sh', '.bat', 
+                            '.java', '.cs', '.rb', '.go', '.php', '.swift', '.kt', '.kts', '.ps1'},
+            "Data & Config": {'.json', '.jsonl', '.yaml', '.yml', '.toml', '.ini', '.csv', '.proto', 
+                              '.xml', '.env', '.sql', '.db', '.sqlite', '.sqlite3', '.mdb', '.accdb', '.dat'},
+            "Web & Markup": {'.html', '.htm', '.svg', '.css', '.jsx', '.ts', '.tsx', '.vue'},
+            "Build & Infra": {'.a', '.so', '.cmake', '.lock', '.in', '.nsi', '.desktop', '.sln', '.csproject'},
+            "Docs": {'.md', '.txt', '.pdf', '.rst', '.rtf'},
+            "Media": {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp'},
+            "Misc": {'.zip', '.mib', '.expr', '.shw', '.2'}
         }
         
         self._setup_ui()
@@ -121,18 +123,20 @@ class FileTypesTab(ttk.Frame):
         # Load saved selection
         saved_exts = self.config_manager.get_selected_extensions()
         
-        default_checked = self.categories["Code"].union(self.categories["Data"]).union(self.categories["Text"]).union(self.categories["Temp"]).union(self.categories["Archive"])
+        # Default checked: exclude Caches, Runtime, Backups, and Misc by default
+        default_checked = self.categories["Programming"].union(
+            self.categories["Data & Config"]
+        ).union(
+            self.categories["Web & Markup"]
+        ).union(
+            self.categories["Build & Infra"]
+        ).union(
+            self.categories["Docs"]
+        )
 
         # Categorize
-        categorized_exts = {
-            "Code": [],
-            "Data": [],
-            "Text": [],
-            "Images": [],
-            "Temp": [],
-            "Archive": [],
-            "Other": []
-        }
+        categorized_exts = {cat: [] for cat in self.categories.keys()}
+        categorized_exts["Other"] = []
 
         # extensions_dict keys are the extensions
         for ext in extensions_dict.keys():
@@ -148,7 +152,7 @@ class FileTypesTab(ttk.Frame):
         self.column_exts = categorized_exts
 
         # Setup Columns
-        columns = ["Code", "Data", "Text", "Images", "Temp", "Archive", "Other"]
+        columns = list(self.categories.keys()) + ["Other"]
         
         for i, col_name in enumerate(columns):
             # Column Header
@@ -171,7 +175,7 @@ class FileTypesTab(ttk.Frame):
                 chk = ttk.Checkbutton(self.scrollable_frame, text=label_text, variable=var)
                 chk.grid(row=row_idx, column=i, sticky="w", padx=15, pady=2)
                 self.extension_vars[ext] = var
-                # Update button text if state changes manually (optional, but good for sync)
+                # Update button text if state changes manually
                 var.trace_add("write", lambda *args, c=col_name: self._sync_column_button(c))
                 row_idx += 1
 
@@ -188,7 +192,8 @@ class FileTypesTab(ttk.Frame):
             self.column_buttons[col_name] = btn
 
         for i in range(len(columns)):
-            self.scrollable_frame.grid_columnconfigure(i, weight=1, minsize=150)
+            self.scrollable_frame.grid_columnconfigure(i, weight=1, minsize=160)
+
 
     def _sync_column_button(self, col_name):
         if not hasattr(self, 'column_buttons') or col_name not in self.column_buttons:
